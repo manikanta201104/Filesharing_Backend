@@ -9,10 +9,16 @@ import connectDB from "./config/db.js";
 import filesRoutes from "./routes/files.routes.js";
 import showRoutes from "./routes/show.routes.js";
 import downloadRoutes from "./routes/download.routes.js";
+import cors from "cors";
+
 
 const app = express();
 connectDB(); 
 
+const corsOptions= {
+    origin:process.env.ALLOWED_CLIENTS.split(",")
+};
+app.use(cors(corsOptions));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
