@@ -5,7 +5,7 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import cors from "cors";
-import multer from "multer"; // For handling file uploads
+import multer from "multer";
 import connectDB from "./config/db.js";
 import filesRoutes from "./routes/files.routes.js";
 import showRoutes from "./routes/show.routes.js";
@@ -20,10 +20,14 @@ connectDB();
 const corsOptions = {
   origin: process.env.ALLOWED_CLIENTS
     ? process.env.ALLOWED_CLIENTS.split(",")
-    : ["https://filesharing-frontend-gg0t.onrender.com", "http://localhost:3000"], // Fallback origins
-  methods: ["GET", "POST", "OPTIONS"], // Allow these methods
-  allowedHeaders: ["Content-Type"], // Allow these headers
-  credentials: false, // Set to true if you need to send cookies or auth headers
+    : [
+        "https://filesharing-frontend-gg0t.onrender.com",
+        "http://localhost:3000",
+        "http://127.0.0.1:3001", // Add this for local testing
+      ],
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"],
+  credentials: false,
 };
 app.use(cors(corsOptions));
 
@@ -40,15 +44,15 @@ app.use(express.json());
 // Set up multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/"); // Store uploaded files in the "uploads" directory
+    cb(null, "uploads/");
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + "-" + file.originalname); // Unique filename
+    cb(null, uniqueSuffix + "-" + file.originalname);
   },
 });
 const upload = multer({ storage });
-app.use("/api/files", upload.single("myfile")); // Handle file uploads on this route
+app.use("/api/files", upload.single("myfile"));
 
 // Serve static files (e.g., uploaded files)
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
