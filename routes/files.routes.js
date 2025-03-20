@@ -1,40 +1,63 @@
-import path from "path";
-import express from "express";
+import { Router } from "express";
 import multer from "multer";
+import path from "path";
+import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from "uuid";
 import { File } from "../models/file.models.js";
 import sendMail from "../services/mail.Services.js";
 import emailTemplate from "../services/emailTemplate.services.js";
 import moment from "moment";
 
-const router = express.Router();
+// Resolve __dirname for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Ensure the uploads directory is absolute
+const uploadDir = path.join(__dirname, "../uploads");
+import fs from "fs";
+
+// Create the uploads directory if it doesn’t exist
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const router = Router();
 
 // Multer Storage Configuration
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, './uploads/');
+    cb(null, uploadDir); // Use absolute path
   },
   filename: function (req, file, cb) {
-    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(file.originalname)}`;
+    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`;
     cb(null, uniqueName);
-  }
+  },
 });
 
-export const upload = multer({
+const upload = multer({
   storage,
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB limit
+  limits: { fileSize: 100 * 1024 * 1024 }, // Align with frontend limit (100MB)
 }).single("myfile");
 
 // File Upload Route
 router.post("/", (req, res) => {
   upload(req, res, async (err) => {
+    if (err instanceof multer.MulterError) {
+      console.error("Multer error during file upload:", err);
+      return res.status(400).json({ error: `Multer error: ${err.message}` });
+    } else if (err) {
+      console.error("Unknown error during file upload:", err);
+      return res.status(500).json({ error: `Upload error: ${err.message}` });
+    }
+
     if (!req.file) {
-      return res.status(400).json({ error: "Upload the file" });
+      console.warn("No file uploaded in request");
+      return res.status(400).json({ error: "Please upload a file" });
     }
-    if (err) {
-      return res.status(500).send({ error: err.message });
-    }
+
     try {
+      console.log("File uploaded successfully:", req.file);
+
       // Store file in DB
       const file = new File({
         filename: req.file.filename,
@@ -42,35 +65,42 @@ router.post("/", (req, res) => {
         path: req.file.path,
         size: req.file.size,
       });
+
       const response = await file.save();
-      return res.json({ file: `${process.env.APP_BASE_URL}/files/${response.uuid}` });
-    } catch (err) {
-      return res.status(500).send({ error: err.message });
+      const fileUrl = `${process.env.APP_BASE_URL}/files/${response.uuid}`;
+      console.log("File saved to DB, URL:", fileUrl);
+
+      return res.json({ file: fileUrl });
+    } catch (error) {
+      console.error("Error saving file to database:", error);
+      return res.status(500).json({ error: `Database error: ${error.message}` });
     }
   });
 });
 
 // Send Email Route
-// Send Email Route
-router.post('/send', async (req, res) => {
-  const { uuid, emailFrom, emailTo } = req.body; // Extract expiresIn
+router.post("/send", async (req, res) => {
+  const { uuid, emailFrom, emailTo } = req.body;
 
   if (!uuid || !emailFrom || !emailTo) {
-    return res.status(422).send({ error: "All fields are required except expiry" });
+    console.warn("Missing required fields in /send request:", req.body);
+    return res.status(422).json({ error: "All fields are required (uuid, emailFrom, emailTo)" });
   }
 
   try {
     const file = await File.findOne({ uuid });
     if (!file) {
-      return res.status(404).send({ error: "File not found" });
+      console.warn(`File not found for UUID: ${uuid}`);
+      return res.status(404).json({ error: "File not found" });
     }
 
     if (file.sender) {
-      return res.status(422).send({ error: "Email already sent once" });
+      console.warn(`Email already sent for file UUID: ${uuid}`);
+      return res.status(422).json({ error: "Email already sent once" });
     }
 
     file.sender = emailFrom;
-    file.recevier = emailTo;
+    file.receiver = emailTo; // Note: Fix typo in "recevier" to "receiver"
     await file.save();
 
     // Send email
@@ -81,19 +111,18 @@ router.post('/send', async (req, res) => {
       text: `${emailFrom} shared a file with you`,
       html: emailTemplate({
         emailFrom,
-        downloadLink: `${process.env.APP_BASE_URL}/file/${file.uuid}?source=email`,
-        size: parseInt(file.size/1000) + ' KB',
-        expires: '24 hours'
-      })
+        downloadLink: `${process.env.APP_BASE_URL}/files/${file.uuid}?source=email`,
+        size: parseInt(file.size / 1000) + " KB",
+        expires: "24 hours",
+      }),
     });
 
-    return res.send({ success: true });
-
-  } catch (err) {
-    console.error("Error in /send route:", err); // Logs the actual error
-    return res.status(500).json({ error: err.message });
+    console.log(`Email sent successfully to ${emailTo} from ${emailFrom} for file UUID: ${uuid}`);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("Error in /send route:", error);
+    return res.status(500).json({ error: `Email sending error: ${error.message}` });
   }
 });
-
 
 export default router;

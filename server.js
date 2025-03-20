@@ -23,7 +23,7 @@ const corsOptions = {
     : [
         "https://filesharing-frontend-gg0t.onrender.com",
         "http://localhost:3000",
-        "http://127.0.0.1:3001", // Add this for local testing
+        "http://127.0.0.1:3001",
       ],
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type"],
@@ -52,7 +52,6 @@ const storage = multer.diskStorage({
   },
 });
 const upload = multer({ storage });
-app.use("/api/files", upload.single("myfile"));
 
 // Serve static files (e.g., uploaded files)
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
@@ -63,13 +62,17 @@ app.set("view engine", "ejs");
 app.use(express.static("public"));
 
 // Routes
-app.use("/api/files", filesRoutes);
+app.use("/api/files", filesRoutes); // Note: We'll apply multer in the route handler
 app.use("/files", showRoutes);
 app.use("/files/download", downloadRoutes);
 
 // Global error-handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error("Error details:", err);
+  if (err instanceof multer.MulterError) {
+    // Handle multer-specific errors
+    return res.status(400).json({ error: `Multer error: ${err.message}` });
+  }
   res.status(500).json({ error: "Something went wrong!" });
 });
 
